@@ -1,11 +1,7 @@
-`seq!`
-======
-
-[![github]](https://github.com/ervanalb/super-seq-macro)&ensp;[![crates-io]](https://crates.io/crates/super-seq-macro)&ensp;[![docs-rs]](https://docs.rs/super-seq-macro)
+Supercharged `seq!` macro
+=========================
 
 <br>
-
-# For-loops over any iterable in a macro
 
 This crate provides a `seq!` macro to repeat a fragment of source code and
 substitute into each repetition a value of your choosing,
