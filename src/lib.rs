@@ -1,18 +1,17 @@
-//! [![github]](https://github.com/dtolnay/seq-macro)&ensp;[![crates-io]](https://crates.io/crates/seq-macro)&ensp;[![docs-rs]](https://docs.rs/seq-macro)
-//!
-//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
-//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
-//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
+//! [![github]](https://github.com/ervanalb/super-seq-macro)&ensp;[![crates-io]](https://crates.io/crates/super-seq-macro)&ensp;[![docs-rs]](https://docs.rs/super-seq-macro)
 //!
 //! <br>
 //!
-//! # Imagine for-loops in a macro
+//! # For-loops over any iterable in a macro
 //!
 //! This crate provides a `seq!` macro to repeat a fragment of source code and
-//! substitute into each repetition a sequential numeric counter.
+//! substitute into each repetition a value of your choosing,
+//! drawn from an iterable [RHAI](https://rhai.rs/) expression.
+//!
+//! This is mostly compatible with the [seq-macro](https://github.com/dtolnay/seq-macro) crate.
 //!
 //! ```
-//! use seq_macro::seq;
+//! use super_seq_macro::seq;
 //!
 //! fn main() {
 //!     let tuple = (1000, 100, 10);
@@ -42,13 +41,13 @@
 //!   sequential identifiers.
 //!
 //! ```
-//! use seq_macro::seq;
+//! use super_seq_macro::seq;
 //!
 //! seq!(N in 64..=127 {
 //!     #[derive(Debug)]
 //!     enum Demo {
 //!         // Expands to Variant64, Variant65, ...
-//!         ##(
+//!         #(
 //!             Variant~N,
 //!         )*
 //!     }
@@ -59,15 +58,32 @@
 //! }
 //! ```
 //!
-//! - Byte and character ranges are supported: `b'a'..=b'z'`, `'a'..='z'`.
-//!
-//! - If the range bounds are written in binary, octal, hex, or with zero
-//!   padding, those features are preserved in any generated tokens.
+//! - RHAI provides functional tools like `.filter()` and `.map()` on arrays.
 //!
 //! ```
-//! use seq_macro::seq;
+//! use super_seq_macro::seq;
 //!
-//! seq!(P in 0x000..=0x00F {
+//! seq!(A in 0..3 {#(
+//!     const WITHOUT_~A: [u32; 2] = seq!(B in (0..3).collect().filter(|x| x != A) {
+//!         [ #( B, )* ]
+//!     });
+//! )*});
+//!
+//! assert_eq!(WITHOUT_0, [1, 2]);
+//! assert_eq!(WITHOUT_1, [0, 2]);
+//! assert_eq!(WITHOUT_2, [0, 1]);
+//! ```
+//!
+//! - Since the backtick character is not available, the syntax `$"..."$` is provided for string
+//!   interpolation.
+//!
+//! ```
+//! use super_seq_macro::seq;
+//!
+//! seq!(P in (0x000..0x00F).collect()
+//!     .map(|x| x.to_hex().to_upper()) // Convert to uppercase hex
+//!     .map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) // Pad on the left with zeros
+//!     {
 //!     // expands to structs Pin000, ..., Pin009, Pin00A, ..., Pin00F
 //!     struct Pin~P;
 //! });
@@ -85,131 +101,243 @@
     clippy::wildcard_imports
 )]
 
-mod parse;
-
-use crate::parse::*;
-use proc_macro::{Delimiter, Group, Ident, Literal, Span, TokenStream, TokenTree};
-use std::char;
+use proc_macro2::{Delimiter, Group, Ident, Spacing, Span, TokenStream, TokenTree};
 use std::iter::{self, FromIterator};
+use std::mem;
+use syn::{
+    parse::{Parse, ParseStream},
+    parse_macro_input, Error, Result, Token,
+};
+
+#[derive(Debug)]
+struct SeqInput {
+    ident: Ident,
+    script: TokenStream,
+    block: TokenStream,
+}
+
+impl Parse for SeqInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident: Ident = input.parse()?;
+        input.parse::<Token![in]>()?;
+        let (script, block) = input.step(|cursor| {
+            let mut cur = *cursor;
+            let mut script = TokenStream::new();
+            let mut block: Option<TokenTree> = None;
+
+            while let Some((tt, next)) = cur.token_tree() {
+                if let Some(ref mut block) = block {
+                    let old_block = mem::replace(block, tt.clone());
+                    script.extend(std::iter::once(old_block));
+                } else {
+                    block = Some(tt.clone());
+                }
+                cur = next;
+            }
+            Ok(((script, block), cur))
+        })?;
+
+        let Some(block) = block else {
+            return Err(Error::new(Span::call_site(), "Expected block"));
+        };
+        let TokenTree::Group(block) = block else {
+            return Err(Error::new(block.span(), "Expected block"));
+        };
+
+        Ok(SeqInput {
+            ident,
+            script,
+            block: block.stream(),
+        })
+    }
+}
 
 #[proc_macro]
-pub fn seq(input: TokenStream) -> TokenStream {
-    match seq_impl(input) {
-        Ok(expanded) => expanded,
-        Err(error) => error.into_compile_error(),
+pub fn seq(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as SeqInput);
+
+    let output = seq_impl(input).unwrap_or_else(Error::into_compile_error);
+    proc_macro::TokenStream::from(output)
+}
+
+fn seq_impl(
+    SeqInput {
+        ident,
+        script,
+        block,
+    }: SeqInput,
+) -> Result<TokenStream> {
+    // Run script
+    let script = rewrite_script(script);
+    let script_span = Span::call_site(); //script.span(); TODO
+
+    let mut engine = rhai::Engine::new();
+
+    fn rhai_collect<T: IntoIterator<Item: Into<rhai::Dynamic>>>(inp: T) -> rhai::Array {
+        inp.into_iter().map(|x| x.into()).collect()
     }
-}
+    engine.register_fn("collect", rhai_collect::<std::ops::Range<i64>>);
+    engine.register_fn("collect", rhai_collect::<std::ops::RangeInclusive<i64>>);
 
-struct Range {
-    begin: u64,
-    end: u64,
-    inclusive: bool,
-    kind: Kind,
-    suffix: String,
-    width: usize,
-    radix: Radix,
-}
+    let output: rhai::Dynamic = engine
+        .eval(&script)
+        .map_err(|e| Error::new(script_span, e.to_string()))?;
 
-struct Value {
-    int: u64,
-    kind: Kind,
-    suffix: String,
-    width: usize,
-    radix: Radix,
-    span: Span,
-}
+    // See if output is a range of int
+    let list: Vec<_> = if let Some(r) = output.clone().try_cast::<std::ops::Range<i64>>() {
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(r) = output.clone().try_cast::<std::ops::RangeInclusive<i64>>() {
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(a) = output.clone().try_cast::<Vec<rhai::Dynamic>>() {
+        a.into_iter().map(|d| d.to_string()).collect()
+    } else {
+        return Err(Error::new(script_span, "Bad expression type"));
+    };
 
-struct Splice<'a> {
-    int: u64,
-    kind: Kind,
-    suffix: &'a str,
-    width: usize,
-    radix: Radix,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-enum Kind {
-    Int,
-    Byte,
-    Char,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-enum Radix {
-    Binary,
-    Octal,
-    Decimal,
-    LowerHex,
-    UpperHex,
-}
-
-impl<'a> IntoIterator for &'a Range {
-    type Item = Splice<'a>;
-    type IntoIter = Box<dyn Iterator<Item = Splice<'a>> + 'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let splice = move |int| Splice {
-            int,
-            kind: self.kind,
-            suffix: &self.suffix,
-            width: self.width,
-            radix: self.radix,
-        };
-        match self.kind {
-            Kind::Int | Kind::Byte => {
-                if self.inclusive {
-                    Box::new((self.begin..=self.end).map(splice))
-                } else {
-                    Box::new((self.begin..self.end).map(splice))
-                }
-            }
-            Kind::Char => {
-                let begin = char::from_u32(self.begin as u32).unwrap();
-                let end = char::from_u32(self.end as u32).unwrap();
-                let int = |ch| u64::from(u32::from(ch));
-                if self.inclusive {
-                    Box::new((begin..=end).map(int).map(splice))
-                } else {
-                    Box::new((begin..end).map(int).map(splice))
-                }
-            }
-        }
-    }
-}
-
-fn seq_impl(input: TokenStream) -> Result<TokenStream, SyntaxError> {
-    let mut iter = input.into_iter();
-    let var = require_ident(&mut iter)?;
-    require_keyword(&mut iter, "in")?;
-    let begin = require_value(&mut iter)?;
-    require_punct(&mut iter, '.')?;
-    require_punct(&mut iter, '.')?;
-    let inclusive = require_if_punct(&mut iter, '=')?;
-    let end = require_value(&mut iter)?;
-    let body = require_braces(&mut iter)?;
-    require_end(&mut iter)?;
-
-    let range = validate_range(begin, end, inclusive)?;
+    //let list = list
+    //    .into_iter()
+    //    .map(|x| x.into_string())
+    //    .collect::<std::result::Result<Vec<_>, _>>()
+    //    .map_err(|e| Error::new(script_span, e))?;
 
     let mut found_repetition = false;
-    let expanded = expand_repetitions(&var, &range, body.clone(), &mut found_repetition);
+    let expanded = expand_repetitions(&ident, &list, block.clone(), &mut found_repetition);
     if found_repetition {
         Ok(expanded)
     } else {
         // If no `#(...)*`, repeat the entire body.
-        Ok(repeat(&var, &range, &body))
+        Ok(repeat(&ident, &list, &block))
     }
 }
 
-fn repeat(var: &Ident, range: &Range, body: &TokenStream) -> TokenStream {
+fn rewrite_script(script: TokenStream) -> String {
+    fn dollar_str(tokens: &[TokenTree]) -> Option<String> {
+        assert!(tokens.len() == 3);
+        match &tokens[0] {
+            TokenTree::Punct(punct) if punct.as_char() == '$' => {}
+            _ => return None,
+        }
+        match &tokens[2] {
+            TokenTree::Punct(punct) if punct.as_char() == '$' => {}
+            _ => return None,
+        }
+        match &tokens[1] {
+            TokenTree::Literal(lit) => {
+                let content = lit.to_string();
+                let mut chars = content.chars();
+                match chars.next() {
+                    Some('"') => {}
+                    _ => return None,
+                }
+                match chars.next_back() {
+                    Some('"') => {}
+                    _ => return None,
+                }
+                return Some(format!("`{}`", chars.as_str()));
+            }
+            _ => return None,
+        }
+    }
+
+    // Look for `$"..."$`.
+    let tokens = Vec::from_iter(script);
+    let mut output = String::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        if let TokenTree::Group(group) = &tokens[i] {
+            match group.delimiter() {
+                Delimiter::Parenthesis => {
+                    output.push('(');
+                }
+                Delimiter::Brace => {
+                    output.push('{');
+                }
+                Delimiter::Bracket => {
+                    output.push('[');
+                }
+                Delimiter::None => {}
+            }
+            output.push(' ');
+            output.push_str(&rewrite_script(group.stream()));
+            match group.delimiter() {
+                Delimiter::Parenthesis => {
+                    output.push(')');
+                }
+                Delimiter::Brace => {
+                    output.push('}');
+                }
+                Delimiter::Bracket => {
+                    output.push(']');
+                }
+                Delimiter::None => {}
+            }
+            output.push(' ');
+            i += 1;
+            continue;
+        }
+        if i + 3 <= tokens.len() {
+            if let Some(backtick_str) = dollar_str(&tokens[i..i + 3]) {
+                output.push_str(&backtick_str);
+                output.push(' ');
+                i += 3;
+                continue;
+            }
+        }
+
+        match &tokens[i] {
+            TokenTree::Group(_) => {
+                unreachable!();
+            }
+            TokenTree::Ident(i) => {
+                output.push_str(&i.to_string());
+                output.push(' ');
+            }
+            TokenTree::Punct(p) => {
+                output.push_str(&p.to_string());
+                match p.spacing() {
+                    Spacing::Alone => {
+                        output.push(' ');
+                    }
+                    Spacing::Joint => {}
+                }
+            }
+            TokenTree::Literal(l) => {
+                output.push_str(&l.to_string());
+                output.push(' ');
+            }
+        }
+        i += 1;
+        //let template = match enter_repetition(&tokens[i..i + 3]) {
+        //    Some(template) => template,
+        //    None => {
+        //        i += 1;
+        //        continue;
+        //    }
+        //};
+        //*found_repetition = true;
+        //let mut repeated = Vec::new();
+        //for value in range {
+        //    repeated.extend(substitute_value(var, &value, template.clone()));
+        //}
+        //let repeated_len = repeated.len();
+        //tokens.splice(i..i + 3, repeated);
+        //i += repeated_len;
+    }
+
+    //let script = TokenStream::from_iter(tokens);
+
+    output
+}
+
+fn repeat(var: &Ident, list: &[String], body: &TokenStream) -> TokenStream {
     let mut repeated = TokenStream::new();
-    for value in range {
-        repeated.extend(substitute_value(var, &value, body.clone()));
+    for value in list {
+        repeated.extend(substitute_value(var, value, body.clone()));
     }
     repeated
 }
 
-fn substitute_value(var: &Ident, splice: &Splice, body: TokenStream) -> TokenStream {
+fn substitute_value(var: &Ident, value: &str, body: TokenStream) -> TokenStream {
     let mut tokens = Vec::from_iter(body);
 
     let mut i = 0;
@@ -221,9 +349,17 @@ fn substitute_value(var: &Ident, splice: &Splice, body: TokenStream) -> TokenStr
         };
         if replace {
             let original_span = tokens[i].span();
-            let mut literal = splice.literal();
-            literal.set_span(original_span);
-            tokens[i] = TokenTree::Literal(literal);
+
+            let new_tokens = value.parse::<TokenStream>().unwrap();
+            let mut iter = new_tokens.into_iter();
+            let mut t = match iter.next() {
+                Some(t) => t,
+                None => panic!("Empty token"),
+            };
+            assert!(iter.next().is_none(), "Multiple tokens");
+
+            t.set_span(original_span);
+            tokens[i] = t;
             i += 1;
             continue;
         }
@@ -249,19 +385,7 @@ fn substitute_value(var: &Ident, splice: &Splice, body: TokenStream) -> TokenStr
                 _ => None,
             };
             if let Some(prefix) = prefix {
-                let number = match splice.kind {
-                    Kind::Int => match splice.radix {
-                        Radix::Binary => format!("{0:01$b}", splice.int, splice.width),
-                        Radix::Octal => format!("{0:01$o}", splice.int, splice.width),
-                        Radix::Decimal => format!("{0:01$}", splice.int, splice.width),
-                        Radix::LowerHex => format!("{0:01$x}", splice.int, splice.width),
-                        Radix::UpperHex => format!("{0:01$X}", splice.int, splice.width),
-                    },
-                    Kind::Byte | Kind::Char => {
-                        char::from_u32(splice.int as u32).unwrap().to_string()
-                    }
-                };
-                let concat = format!("{}{}", prefix, number);
+                let concat = format!("{}{}", prefix, value);
                 let ident = Ident::new(&concat, prefix.span());
                 tokens.splice(i..i + 3, iter::once(TokenTree::Ident(ident)));
                 i += 1;
@@ -272,7 +396,7 @@ fn substitute_value(var: &Ident, splice: &Splice, body: TokenStream) -> TokenStr
         // Recursively substitute content nested in a group.
         if let TokenTree::Group(group) = &mut tokens[i] {
             let original_span = group.span();
-            let content = substitute_value(var, splice, group.stream());
+            let content = substitute_value(var, value, group.stream());
             *group = Group::new(group.delimiter(), content);
             group.set_span(original_span);
         }
@@ -303,7 +427,7 @@ fn enter_repetition(tokens: &[TokenTree]) -> Option<TokenStream> {
 
 fn expand_repetitions(
     var: &Ident,
-    range: &Range,
+    range: &[String],
     body: TokenStream,
     found_repetition: &mut bool,
 ) -> TokenStream {
@@ -344,30 +468,65 @@ fn expand_repetitions(
     TokenStream::from_iter(tokens)
 }
 
-impl Splice<'_> {
-    fn literal(&self) -> Literal {
-        match self.kind {
-            Kind::Int | Kind::Byte => {
-                let repr = match self.radix {
-                    Radix::Binary => format!("0b{0:02$b}{1}", self.int, self.suffix, self.width),
-                    Radix::Octal => format!("0o{0:02$o}{1}", self.int, self.suffix, self.width),
-                    Radix::Decimal => format!("{0:02$}{1}", self.int, self.suffix, self.width),
-                    Radix::LowerHex => format!("0x{0:02$x}{1}", self.int, self.suffix, self.width),
-                    Radix::UpperHex => format!("0x{0:02$X}{1}", self.int, self.suffix, self.width),
-                };
-                let tokens = repr.parse::<TokenStream>().unwrap();
-                let mut iter = tokens.into_iter();
-                let literal = match iter.next() {
-                    Some(TokenTree::Literal(literal)) => literal,
-                    _ => unreachable!(),
-                };
-                assert!(iter.next().is_none());
-                literal
+#[cfg(test)]
+mod test {
+    use crate::{rewrite_script, seq_impl};
+    use quote::quote;
+
+    #[test]
+    fn test_string_rewrite() {
+        let inp = quote! {
+            let a = (
+                $"${x}"$
+            );
+        };
+
+        let result = rewrite_script(inp);
+        assert_eq!(result, "let a = ( `${x}` ) ; ");
+    }
+
+    #[test]
+    fn test_range() {
+        let inp = quote! {
+            A in 0..3 {
+                println("{}", A);
             }
-            Kind::Char => {
-                let ch = char::from_u32(self.int as u32).unwrap();
-                Literal::character(ch)
+        };
+
+        let result = seq_impl(syn::parse2(inp).unwrap()).unwrap();
+        assert_eq!(
+            result.to_string(),
+            "println (\"{}\" , 0) ; println (\"{}\" , 1) ; println (\"{}\" , 2) ;"
+        );
+    }
+
+    #[test]
+    fn test_int_array() {
+        let inp = quote! {
+            A in [0,1,2] {
+                println("{}", A);
             }
-        }
+        };
+
+        let result = seq_impl(syn::parse2(inp).unwrap()).unwrap();
+        assert_eq!(
+            result.to_string(),
+            "println (\"{}\" , 0) ; println (\"{}\" , 1) ; println (\"{}\" , 2) ;"
+        );
+    }
+
+    #[test]
+    fn test_str_array() {
+        let inp = quote! {
+            A in (0..3).collect().map(|x| $"${x}"$) {
+                println("{}", A);
+            }
+        };
+
+        let result = seq_impl(syn::parse2(inp).unwrap()).unwrap();
+        assert_eq!(
+            result.to_string(),
+            "println (\"{}\" , 0) ; println (\"{}\" , 1) ; println (\"{}\" , 2) ;"
+        );
     }
 }

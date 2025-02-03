@@ -5,7 +5,7 @@
     clippy::shadow_unrelated
 )]
 
-use seq_macro::seq;
+use super_seq_macro::seq;
 
 seq!(N in 0..8 {
     // nothing
@@ -64,13 +64,13 @@ fn test_underscores() {
 
 #[test]
 fn test_suffixed() {
-    let n = seq!(N in 0..1u16 { stringify!(N) });
+    let n = seq!(N in (0..1).collect().map(|x| $"${x}u16"$) { stringify!(N) });
     assert_eq!(n, "0u16");
 }
 
 #[test]
 fn test_padding() {
-    seq!(N in 098..=100 {
+    seq!(N in (98..=100).collect().map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) {
         fn e~N() -> &'static str {
             stringify!(N)
         }
@@ -81,10 +81,14 @@ fn test_padding() {
 
 #[test]
 fn test_byte() {
-    seq!(c in b'x'..=b'z' {
-        fn get_~c() -> u8 {
-            c
-        }
+    seq!(cstr in ["x", "y", "z"].map(|x| '"' + x + '"') {
+        seq!(cn in [cstr] {
+            fn get_~cn() -> u8 {
+                seq!(cb in [cstr].map(|x| "b'" + x + "'") {
+                    cb
+                })
+            }
+        });
     });
     let bytes = [get_x(), get_y(), get_z()];
     assert_eq!(bytes, *b"xyz");
@@ -92,10 +96,14 @@ fn test_byte() {
 
 #[test]
 fn test_char() {
-    seq!(ch in 'x'..='z' {
-        fn get_~ch() -> char {
-            ch
-        }
+    seq!(cstr in ["x", "y", "z"].map(|x| '"' + x + '"') {
+        seq!(cn in [cstr] {
+            fn get_~cn() -> char {
+                seq!(cc in [cstr].map(|x| "'" + x + "'") {
+                    cc
+                })
+            }
+        });
     });
     let chars = [get_x(), get_y(), get_z()];
     assert_eq!(chars, ['x', 'y', 'z']);
@@ -103,39 +111,35 @@ fn test_char() {
 
 #[test]
 fn test_binary() {
-    let s = seq!(B in 0b00..=0b11 { stringify!(#(B)*) });
+    let s = seq!(B in (0b00..=0b11).collect().map(|x| x.to_binary()).map(|x| "0b" + "00".sub_string($"${x}"$.len()) + $"${x}"$) { stringify!(#(B)*) });
     let expected = "0b00 0b01 0b10 0b11";
     assert_eq!(expected, s);
 }
 
 #[test]
 fn test_octal() {
-    let s = seq!(O in 0o6..0o12 { stringify!(#(O)*) });
+    let s = seq!(O in (0o6..0o12).collect().map(|x| "0o" + x.to_octal()) { stringify!(#(O)*) });
     let expected = "0o6 0o7 0o10 0o11";
     assert_eq!(expected, s);
 }
 
 #[test]
 fn test_hex() {
-    let s = seq!(X in 0x08..0x0c { stringify!(#(X)*) });
+    let s = seq!(X in (0x08..0x0c).collect().map(|x| x.to_hex()).map(|x| "0x" + "00".sub_string($"${x}"$.len()) + $"${x}"$) { stringify!(#(X)*) });
     let expected = "0x08 0x09 0x0a 0x0b";
     assert_eq!(expected, s);
 
-    let s = seq!(X in 0x08..0x0C { stringify!(#(X)*) });
+    let s = seq!(X in (0x08..0x0C).collect().map(|x| x.to_hex().to_upper()).map(|x| "0x" + "00".sub_string($"${x}"$.len()) + $"${x}"$) { stringify!(#(X)*) });
     let expected = "0x08 0x09 0x0A 0x0B";
-    assert_eq!(expected, s);
-
-    let s = seq!(X in 0X09..0X10 { stringify!(#(X)*) });
-    let expected = "0x09 0x0A 0x0B 0x0C 0x0D 0x0E 0x0F";
     assert_eq!(expected, s);
 }
 
 #[test]
 fn test_radix_concat() {
-    seq!(B in 0b011..0b101 { struct S~B; });
-    seq!(O in 0o007..0o011 { struct S~O; });
-    seq!(X in 0x00a..0x00c { struct S~X; });
-    seq!(X in 0x00C..0x00E { struct S~X; });
+    seq!(B in (0b011..0b101).collect().map(|x| x.to_binary()).map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) { struct S~B; });
+    seq!(O in (0o007..0o011).collect().map(|x| x.to_octal()).map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) { struct S~O; });
+    seq!(X in (0x00a..0x00c).collect().map(|x| x.to_hex()).map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) { struct S~X; });
+    seq!(X in (0x00C..0x00E).collect().map(|x| x.to_hex().to_upper()).map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) { struct S~X; });
     let _ = (S011, S100, S007, S010, S00a, S00b, S00C, S00D);
 }
 
@@ -153,7 +157,7 @@ fn test_ident() {
 }
 
 pub mod test_enum {
-    use seq_macro::seq;
+    use super_seq_macro::seq;
 
     seq!(N in 0..16 {
         #[derive(Copy, Clone, PartialEq, Debug)]
@@ -173,7 +177,7 @@ pub mod test_enum {
 }
 
 pub mod test_inclusive {
-    use seq_macro::seq;
+    use super_seq_macro::seq;
 
     seq!(N in 16..=20 {
         pub enum E {
@@ -223,7 +227,7 @@ fn test_array() {
 }
 
 pub mod test_group {
-    use seq_macro::seq;
+    use super_seq_macro::seq;
 
     // Source of truth. Call a given macro passing nproc as argument.
     macro_rules! pass_nproc {
