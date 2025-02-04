@@ -1,5 +1,9 @@
 //! [![github]](https://github.com/ervanalb/super-seq-macro)&ensp;[![crates-io]](https://crates.io/crates/super-seq-macro)&ensp;[![docs-rs]](https://docs.rs/super-seq-macro)
 //!
+//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
+//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
+//! [docs-rs]: https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs
+//!
 //! <br>
 //!
 //! # For-loops over any iterable in a macro
@@ -88,6 +92,11 @@
 //!     struct Pin~P;
 //! });
 //! ```
+//!
+//! - If the input tokens contain a section surrounded by `#(` ... `)#` then
+//!   that part is taken verbatim and not repeated.
+//!   Markers such as`#(`...`)*` within that segment are ignored
+//!   (this can be useful for nesting `seq!` invocations.)
 
 #![doc(html_root_url = "https://docs.rs/seq-macro/0.3.5")]
 #![allow(
@@ -425,6 +434,24 @@ fn enter_repetition(tokens: &[TokenTree]) -> Option<TokenStream> {
     }
 }
 
+fn enter_single(tokens: &[TokenTree]) -> Option<TokenStream> {
+    assert!(tokens.len() == 3);
+    match &tokens[0] {
+        TokenTree::Punct(punct) if punct.as_char() == '#' => {}
+        _ => return None,
+    }
+    match &tokens[2] {
+        TokenTree::Punct(punct) if punct.as_char() == '#' => {}
+        _ => return None,
+    }
+    match &tokens[1] {
+        TokenTree::Group(group) if group.delimiter() == Delimiter::Parenthesis => {
+            Some(group.stream())
+        }
+        _ => None,
+    }
+}
+
 fn expand_repetitions(
     var: &Ident,
     range: &[String],
@@ -433,7 +460,7 @@ fn expand_repetitions(
 ) -> TokenStream {
     let mut tokens = Vec::from_iter(body);
 
-    // Look for `#(...)*`.
+    // Look for `#(...)*` or `#(...)#`.
     let mut i = 0;
     while i < tokens.len() {
         if let TokenTree::Group(group) = &mut tokens[i] {
@@ -448,21 +475,27 @@ fn expand_repetitions(
             i += 1;
             continue;
         }
-        let template = match enter_repetition(&tokens[i..i + 3]) {
-            Some(template) => template,
-            None => {
-                i += 1;
-                continue;
+        if let Some(template) = enter_repetition(&tokens[i..i + 3]) {
+            *found_repetition = true;
+            let mut repeated = Vec::new();
+            for value in range {
+                repeated.extend(substitute_value(var, &value, template.clone()));
             }
-        };
-        *found_repetition = true;
-        let mut repeated = Vec::new();
-        for value in range {
-            repeated.extend(substitute_value(var, &value, template.clone()));
+            let repeated_len = repeated.len();
+            tokens.splice(i..i + 3, repeated);
+            i += repeated_len;
+            continue;
         }
-        let repeated_len = repeated.len();
-        tokens.splice(i..i + 3, repeated);
-        i += repeated_len;
+        if let Some(template) = enter_single(&tokens[i..i + 3]) {
+            println!("Found enter_single {}", template);
+            tokens.splice(i..i + 3, template);
+            *found_repetition = true;
+            i += 1;
+            continue;
+        }
+        // Normal token
+        i += 1;
+        continue;
     }
 
     TokenStream::from_iter(tokens)

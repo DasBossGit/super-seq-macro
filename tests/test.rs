@@ -290,3 +290,32 @@ fn test_nested() {
 
     assert_eq!(vec, ["T1", "T1 T2", "T1 T2 T3"]);
 }
+
+#[test]
+fn test_nested_no_repeat() {
+    macro_rules! nest {
+        (;$arg:expr) => {
+            $arg
+        };
+        ($first:ident $($rest:ident)*; $arg:expr) => {
+            nest!($($rest)*; $first($arg))
+        };
+    }
+
+    fn foo(mut x: [i32; 3]) -> [i32; 3] {
+        x[0] += 10;
+        x
+    }
+    fn bar(mut x: [i32; 3]) -> [i32; 3] {
+        x[1] *= 20;
+        x
+    }
+
+    let a = seq!(F in ["foo", "bar"] {
+        seq!(I in 0..3 {
+            nest!( #( F )* ; #( [ #( I, )* ] )# )
+        })
+    });
+
+    assert_eq!(a, bar(foo([0, 1, 2])));
+}
