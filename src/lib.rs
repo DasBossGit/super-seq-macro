@@ -487,7 +487,6 @@ fn expand_repetitions(
             continue;
         }
         if let Some(template) = enter_single(&tokens[i..i + 3]) {
-            println!("Found enter_single {}", template);
             tokens.splice(i..i + 3, template);
             *found_repetition = true;
             i += 1;
