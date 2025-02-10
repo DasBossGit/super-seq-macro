@@ -1,6 +1,6 @@
 [package]
 name = "super-seq-macro"
-version = "0.3.7"
+version = "0.3.8"
 authors = ["David Tolnay <dtolnay@gmail.com>", "Eric Van Albert <eric@van.al>"]
 categories = ["development-tools", "no-std", "no-std::no-alloc"]
 description = "Macro to repeat a fragment of code based on a RHAI expression"

@@ -360,16 +360,25 @@ fn substitute_value(var: &Ident, value: &str, body: TokenStream) -> TokenStream 
             let original_span = tokens[i].span();
 
             let new_tokens = value.parse::<TokenStream>().unwrap();
-            let mut iter = new_tokens.into_iter();
-            let mut t = match iter.next() {
-                Some(t) => t,
-                None => panic!("Empty token"),
-            };
-            assert!(iter.next().is_none(), "Multiple tokens");
 
-            t.set_span(original_span);
-            tokens[i] = t;
-            i += 1;
+            tokens.splice(
+                i..i + 1,
+                new_tokens.into_iter().map(|mut t| {
+                    t.set_span(original_span);
+                    t
+                }),
+            );
+
+            //let mut iter = new_tokens.into_iter();
+            //let mut t = match iter.next() {
+            //    Some(t) => t,
+            //    None => panic!("Empty token"),
+            //};
+            //assert!(iter.next().is_none(), "Multiple tokens");
+
+            //t.set_span(original_span);
+            //tokens[i] = t;
+            //i += 1;
             continue;
         }
 

@@ -81,30 +81,14 @@ fn test_padding() {
 
 #[test]
 fn test_byte() {
-    seq!(cstr in ["x", "y", "z"].map(|x| '"' + x + '"') {
-        seq!(cn in [cstr] {
-            fn get_~cn() -> u8 {
-                seq!(cb in [cstr].map(|x| "b'" + x + "'") {
-                    cb
-                })
-            }
-        });
-    });
+    seq!(GET_FN in ["x", "y", "z"].map(|x| $"fn get_${x}() -> u8 { b'${x}' }"$) { GET_FN });
     let bytes = [get_x(), get_y(), get_z()];
     assert_eq!(bytes, *b"xyz");
 }
 
 #[test]
 fn test_char() {
-    seq!(cstr in ["x", "y", "z"].map(|x| '"' + x + '"') {
-        seq!(cn in [cstr] {
-            fn get_~cn() -> char {
-                seq!(cc in [cstr].map(|x| "'" + x + "'") {
-                    cc
-                })
-            }
-        });
-    });
+    seq!(GET_FN in ["x", "y", "z"].map(|x| $"fn get_${x}() -> char { '${x}' }"$) { GET_FN });
     let chars = [get_x(), get_y(), get_z()];
     assert_eq!(chars, ['x', 'y', 'z']);
 }
