@@ -78,7 +78,7 @@
 //! assert_eq!(WITHOUT_2, [0, 1]);
 //! ```
 //!
-//! - Since the backtick character is not available, the syntax `$"..."$` is provided for string
+//! - Since the backtick character is not available, the syntax `&"..."&` is provided for string
 //!   interpolation.
 //!
 //! ```
@@ -86,7 +86,7 @@
 //!
 //! seq!(P in (0x000..0x00F).collect()
 //!     .map(|x| x.to_hex().to_upper()) // Convert to uppercase hex
-//!     .map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) // Pad on the left with zeros
+//!     .map(|x| "000".sub_string(&"${x}"&.len()) + &"${x}"&) // Pad on the left with zeros
 //!     {
 //!     // expands to structs Pin000, ..., Pin009, Pin00A, ..., Pin00F
 //!     struct Pin~P;
@@ -110,56 +110,11 @@
     clippy::wildcard_imports
 )]
 
-use proc_macro2::{Delimiter, Group, Ident, Spacing, Span, TokenStream, TokenTree};
+use ::super_seq_macro_types::SeqInput;
+use ::syn::spanned::Spanned;
+use proc_macro2::{Delimiter, Group, Ident, Spacing, TokenStream, TokenTree};
 use std::iter::{self, FromIterator};
-use std::mem;
-use syn::{
-    parse::{Parse, ParseStream},
-    parse_macro_input, Error, Result, Token,
-};
-
-#[derive(Debug)]
-struct SeqInput {
-    ident: Ident,
-    script: TokenStream,
-    block: TokenStream,
-}
-
-impl Parse for SeqInput {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let ident: Ident = input.parse()?;
-        input.parse::<Token![in]>()?;
-        let (script, block) = input.step(|cursor| {
-            let mut cur = *cursor;
-            let mut script = TokenStream::new();
-            let mut block: Option<TokenTree> = None;
-
-            while let Some((tt, next)) = cur.token_tree() {
-                if let Some(ref mut block) = block {
-                    let old_block = mem::replace(block, tt.clone());
-                    script.extend(std::iter::once(old_block));
-                } else {
-                    block = Some(tt.clone());
-                }
-                cur = next;
-            }
-            Ok(((script, block), cur))
-        })?;
-
-        let Some(block) = block else {
-            return Err(Error::new(Span::call_site(), "Expected block"));
-        };
-        let TokenTree::Group(block) = block else {
-            return Err(Error::new(block.span(), "Expected block"));
-        };
-
-        Ok(SeqInput {
-            ident,
-            script,
-            block: block.stream(),
-        })
-    }
-}
+use syn::{Error, Result, parse_macro_input};
 
 #[proc_macro]
 pub fn seq(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -177,8 +132,8 @@ fn seq_impl(
     }: SeqInput,
 ) -> Result<TokenStream> {
     // Run script
+    let script_span = script.span();
     let script = rewrite_script(script);
-    let script_span = Span::call_site(); //script.span(); TODO
 
     let mut engine = rhai::Engine::new();
 
@@ -187,22 +142,96 @@ fn seq_impl(
     }
     engine.register_fn("collect", rhai_collect::<std::ops::Range<i64>>);
     engine.register_fn("collect", rhai_collect::<std::ops::RangeInclusive<i64>>);
-
     let output: rhai::Dynamic = engine
         .eval(&script)
         .map_err(|e| Error::new(script_span, e.to_string()))?;
 
     // See if output is a range of int
-    let list: Vec<_> = if let Some(r) = output.clone().try_cast::<std::ops::Range<i64>>() {
+    let list: Vec<_> = if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i64>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
         r.map(|x| x.to_string()).collect()
-    } else if let Some(r) = output.clone().try_cast::<std::ops::RangeInclusive<i64>>() {
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i64>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i32>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i32>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i16>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i16>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i8>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i8>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u64>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u64>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u32>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u32>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u16>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u16>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u8>>() {
+        if r.start > r.end {
+            r = r.end + 1..r.start + 1; // Reverse the range
+        }
+        r.map(|x| x.to_string()).collect()
+    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u8>>() {
+        if r.start() > r.end() {
+            r = *r.end()..=*r.start(); // Reverse the range
+        }
         r.map(|x| x.to_string()).collect()
     } else if let Some(a) = output.clone().try_cast::<Vec<rhai::Dynamic>>() {
         a.into_iter().map(|d| d.to_string()).collect()
     } else {
         return Err(Error::new(script_span, "Bad expression type"));
     };
-
     //let list = list
     //    .into_iter()
     //    .map(|x| x.into_string())
@@ -220,14 +249,14 @@ fn seq_impl(
 }
 
 fn rewrite_script(script: TokenStream) -> String {
-    fn dollar_str(tokens: &[TokenTree]) -> Option<String> {
+    fn and_str(tokens: &[TokenTree]) -> Option<String> {
         assert!(tokens.len() == 3);
         match &tokens[0] {
-            TokenTree::Punct(punct) if punct.as_char() == '$' => {}
+            TokenTree::Punct(punct) if punct.as_char() == '&' => {}
             _ => return None,
         }
         match &tokens[2] {
-            TokenTree::Punct(punct) if punct.as_char() == '$' => {}
+            TokenTree::Punct(punct) if punct.as_char() == '&' => {}
             _ => return None,
         }
         match &tokens[1] {
@@ -242,13 +271,13 @@ fn rewrite_script(script: TokenStream) -> String {
                     Some('"') => {}
                     _ => return None,
                 }
-                return Some(format!("`{}`", chars.as_str()));
+                Some(format!("`{}`", chars.as_str()))
             }
-            _ => return None,
+            _ => None,
         }
     }
 
-    // Look for `$"..."$`.
+    // Look for `&"..."&`.
     let tokens = Vec::from_iter(script);
     let mut output = String::new();
     let mut i = 0;
@@ -285,7 +314,7 @@ fn rewrite_script(script: TokenStream) -> String {
             continue;
         }
         if i + 3 <= tokens.len() {
-            if let Some(backtick_str) = dollar_str(&tokens[i..i + 3]) {
+            if let Some(backtick_str) = and_str(&tokens[i..i + 3]) {
                 output.push_str(&backtick_str);
                 output.push(' ');
                 i += 3;
@@ -540,6 +569,19 @@ mod test {
             "println (\"{}\" , 0) ; println (\"{}\" , 1) ; println (\"{}\" , 2) ;"
         );
     }
+    #[test]
+    fn test_range_neg() {
+        let inp = quote! {
+            A in -3..-1 {
+                println("{}", A);
+            }
+        };
+        let result = seq_impl(syn::parse2(inp).unwrap()).unwrap();
+        assert_eq!(
+            result.to_string(),
+            "println (\"{}\" , 0) ; println (\"{}\" , - 1) ; println (\"{}\" , - 2) ;"
+        );
+    }
 
     #[test]
     fn test_int_array() {
@@ -555,11 +597,25 @@ mod test {
             "println (\"{}\" , 0) ; println (\"{}\" , 1) ; println (\"{}\" , 2) ;"
         );
     }
+    #[test]
+    fn test_int_array_neg() {
+        let inp = quote! {
+            A in [-0,-1,-2] {
+                println("{}", A);
+            }
+        };
+
+        let result = seq_impl(syn::parse2(inp).unwrap()).unwrap();
+        assert_eq!(
+            result.to_string(),
+            "println (\"{}\" , 0) ; println (\"{}\" , - 1) ; println (\"{}\" , - 2) ;"
+        );
+    }
 
     #[test]
     fn test_str_array() {
         let inp = quote! {
-            A in (0..3).collect().map(|x| $"${x}"$) {
+            A in (0..3).collect().map(|x| &"${x}"&) {
                 println("{}", A);
             }
         };

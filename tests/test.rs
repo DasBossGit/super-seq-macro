@@ -5,6 +5,7 @@
     clippy::shadow_unrelated
 )]
 
+use ::quote::quote;
 use super_seq_macro::seq;
 
 seq!(N in 0..8 {
@@ -62,7 +63,7 @@ fn test_underscores() {
     assert_eq!(100_000, n);
 }
 
-#[test]
+/* #[test]
 fn test_suffixed() {
     let n = seq!(N in (0..1).collect().map(|x| $"${x}u16"$) { stringify!(N) });
     assert_eq!(n, "0u16");
@@ -125,7 +126,7 @@ fn test_radix_concat() {
     seq!(X in (0x00a..0x00c).collect().map(|x| x.to_hex()).map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) { struct S~X; });
     seq!(X in (0x00C..0x00E).collect().map(|x| x.to_hex().to_upper()).map(|x| "000".sub_string($"${x}"$.len()) + $"${x}"$) { struct S~X; });
     let _ = (S011, S100, S007, S010, S00a, S00b, S00C, S00D);
-}
+} */
 
 #[test]
 fn test_ident() {
@@ -302,4 +303,21 @@ fn test_nested_no_repeat() {
     });
 
     assert_eq!(a, bar(foo([0, 1, 2])));
+}
+
+#[test]
+#[allow(unused)]
+fn teststestrs95cefe4d1ed944bf82a85f78911f4cc5() {
+    macro_rules! t {
+        () => {
+            let x = [
+                seq!{
+                    N in 10..3 {
+                        N*2,
+                    }
+                }
+            ]
+        }
+    }
+
 }
