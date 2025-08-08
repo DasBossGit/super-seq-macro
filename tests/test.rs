@@ -310,14 +310,16 @@ fn test_nested_no_repeat() {
 fn teststestrs95cefe4d1ed944bf82a85f78911f4cc5() {
     macro_rules! t {
         () => {
-            let x = [
-                seq!{
-                    N in 10..3 {
-                        N*2,
-                    }
+            seq! {
+                N in 10..3+6 {
+                    N*2,
                 }
-            ]
+            }
+        };
+    }
+    seq! {
+        N in 10..3+6 {
+            N*2,
         }
     }
-
 }

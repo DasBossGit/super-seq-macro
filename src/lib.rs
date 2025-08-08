@@ -582,6 +582,19 @@ mod test {
             "println (\"{}\" , 0) ; println (\"{}\" , - 1) ; println (\"{}\" , - 2) ;"
         );
     }
+    #[test]
+    fn test_range_ops() {
+        let inp = quote! {
+            A in 3+1..=1+5 {
+                println("{}", A);
+            }
+        };
+        let result = seq_impl(syn::parse2(inp).unwrap()).unwrap();
+        assert_eq!(
+            result.to_string(),
+            "println (\"{}\" , 0) ; println (\"{}\" , - 1) ; println (\"{}\" , - 2) ;"
+        );
+    }
 
     #[test]
     fn test_int_array() {
