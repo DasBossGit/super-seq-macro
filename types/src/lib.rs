@@ -1,6 +1,6 @@
-use proc_macro2::{Ident, Span, TokenStream, TokenTree};
-use std::mem;
-use syn::{
+use ::proc_macro2::{Ident, Span, TokenStream, TokenTree};
+use ::std::mem;
+use ::syn::{
     Error, Result, Token,
     parse::{Parse, ParseStream},
 };

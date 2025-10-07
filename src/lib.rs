@@ -111,7 +111,7 @@
 )]
 
 use ::super_seq_macro_types::SeqInput;
-use ::syn::spanned::Spanned;
+use ::syn::{parse::Parse, spanned::Spanned};
 use proc_macro2::{Delimiter, Group, Ident, Spacing, TokenStream, TokenTree};
 use std::iter::{self, FromIterator};
 use syn::{Error, Result, parse_macro_input};
@@ -135,120 +135,222 @@ fn seq_impl(
     let script_span = script.span();
     let script = rewrite_script(script);
 
-    let mut engine = rhai::Engine::new();
+    if let SciptType::Rhai(script) = script {
+        let mut engine = rhai::Engine::new();
 
-    fn rhai_collect<T: IntoIterator<Item: Into<rhai::Dynamic>>>(inp: T) -> rhai::Array {
-        inp.into_iter().map(|x| x.into()).collect()
-    }
-    engine.register_fn("collect", rhai_collect::<std::ops::Range<i64>>);
-    engine.register_fn("collect", rhai_collect::<std::ops::RangeInclusive<i64>>);
-    let output: rhai::Dynamic = engine
-        .eval(&script)
-        .map_err(|e| Error::new(script_span, e.to_string()))?;
+        fn rhai_collect<T: IntoIterator<Item: Into<rhai::Dynamic>>>(inp: T) -> rhai::Array {
+            inp.into_iter().map(|x| x.into()).collect()
+        }
+        engine.register_fn("collect", rhai_collect::<std::ops::Range<i64>>);
+        engine.register_fn("collect", rhai_collect::<std::ops::RangeInclusive<i64>>);
+        let output: rhai::Dynamic = engine
+            .eval(&script)
+            .map_err(|e| Error::new(script_span, e.to_string()))?;
 
-    // See if output is a range of int
-    let list: Vec<_> = if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i64>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
+        // See if output is a range of int
+        let list: Vec<_> = if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i64>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i64>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i32>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i32>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i16>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i16>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i8>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i8>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u64>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u64>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u32>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u32>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u16>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u16>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u8>>() {
+            if r.start > r.end {
+                r = r.end + 1..r.start + 1; // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u8>>() {
+            if r.start() > r.end() {
+                r = *r.end()..=*r.start(); // Reverse the range
+            }
+            r.map(|x| x.to_string()).collect()
+        } else if let Some(a) = output.clone().try_cast::<Vec<rhai::Dynamic>>() {
+            a.into_iter().map(|d| d.to_string()).collect()
+        } else {
+            return Err(Error::new(script_span, "Bad expression type"));
+        };
+        let mut found_repetition = false;
+        let expanded = expand_repetitions(&ident, &list, block.clone(), &mut found_repetition);
+        if found_repetition {
+            Ok(expanded)
+        } else {
+            // If no `#(...)*`, repeat the entire body.
+            Ok(repeat(&ident, &list, &block))
         }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i64>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
+    } else if let SciptType::Enum(list) = script {
+        let str_list = &list.into_iter().map(|v| v.to_string()).collect::<Vec<_>>();
+
+        let mut found_repetition = false;
+        let expanded = expand_repetitions(
+            &ident,
+            str_list.as_slice(),
+            block.clone(),
+            &mut found_repetition,
+        );
+        if found_repetition {
+            Ok(expanded)
+        } else {
+            // If no `#(...)*`, repeat the entire body.
+            Ok(repeat(&ident, str_list.as_slice(), &block))
         }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i32>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i32>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i16>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i16>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<i8>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<i8>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u64>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u64>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u32>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u32>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u16>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u16>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::Range<u8>>() {
-        if r.start > r.end {
-            r = r.end + 1..r.start + 1; // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(mut r) = output.clone().try_cast::<std::ops::RangeInclusive<u8>>() {
-        if r.start() > r.end() {
-            r = *r.end()..=*r.start(); // Reverse the range
-        }
-        r.map(|x| x.to_string()).collect()
-    } else if let Some(a) = output.clone().try_cast::<Vec<rhai::Dynamic>>() {
-        a.into_iter().map(|d| d.to_string()).collect()
     } else {
-        return Err(Error::new(script_span, "Bad expression type"));
-    };
-    //let list = list
-    //    .into_iter()
-    //    .map(|x| x.into_string())
-    //    .collect::<std::result::Result<Vec<_>, _>>()
-    //    .map_err(|e| Error::new(script_span, e))?;
-
-    let mut found_repetition = false;
-    let expanded = expand_repetitions(&ident, &list, block.clone(), &mut found_repetition);
-    if found_repetition {
-        Ok(expanded)
-    } else {
-        // If no `#(...)*`, repeat the entire body.
-        Ok(repeat(&ident, &list, &block))
+        unreachable!();
     }
 }
 
-fn rewrite_script(script: TokenStream) -> String {
+#[derive(Debug, Clone)]
+enum SciptType {
+    Rhai(String),
+    Enum(Vec<TokenTree>),
+}
+impl PartialEq for SciptType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Rhai(s1), Self::Rhai(s2)) => s1 == s2,
+            (Self::Enum(t1), Self::Enum(t2)) => {
+                t1.len() == t2.len()
+                    && t1.iter().zip(t2.iter()).all(|(a, b)| match (a, b) {
+                        (TokenTree::Group(group_a), TokenTree::Group(group_b)) => {
+                            group_a.delimiter() == group_b.delimiter()
+                                && group_a.span().source_text() == group_b.span().source_text()
+                        }
+                        (TokenTree::Ident(ident_a), TokenTree::Ident(ident_b)) => {
+                            ident_a == ident_b
+                        }
+                        (TokenTree::Punct(punct_a), TokenTree::Punct(punct_b)) => {
+                            punct_a.as_char() == punct_b.as_char()
+                                && punct_a.spacing() == punct_b.spacing()
+                        }
+                        (TokenTree::Literal(literal_a), TokenTree::Literal(literal_b)) => {
+                            literal_a.to_string() == literal_b.to_string()
+                        }
+                        _ => false,
+                    })
+            }
+            _ => false,
+        }
+    }
+}
+impl ToString for SciptType {
+    fn to_string(&self) -> String {
+        match self {
+            Self::Rhai(s) => s.clone(),
+            Self::Enum(t) => t
+                .iter()
+                .map(|v| v.to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+        }
+    }
+}
+
+impl SciptType {
+    fn is_rhai(&self) -> bool {
+        matches!(self, SciptType::Rhai(_))
+    }
+    fn push(&mut self, c: char) {
+        match self {
+            Self::Rhai(str) => str.push(c),
+            Self::Enum(token_trees) => {
+                let ts: TokenStream = c.to_string().parse().unwrap();
+                token_trees.extend(ts.into_iter());
+            }
+        }
+    }
+    fn push_str<A: AsRef<str>>(&mut self, s: A) {
+        match self {
+            Self::Rhai(str) => str.push_str(s.as_ref()),
+            Self::Enum(token_trees) => {
+                let ts: TokenStream = s.as_ref().parse().unwrap();
+                token_trees.extend(ts.into_iter());
+            }
+        }
+    }
+    fn push_self(&mut self, other: &Self) {
+        match (self, other) {
+            (Self::Rhai(s1), Self::Rhai(s2)) => s1.push_str(s2),
+            (Self::Enum(t1), Self::Enum(t2)) => t1.extend(t2.iter().cloned()),
+            (Self::Rhai(se), Self::Enum(token_trees)) => {
+                let mut s = String::new();
+                for tt in token_trees {
+                    s.push_str(&tt.to_string());
+                    s.push(' ');
+                }
+                se.push_str(&s);
+            }
+            (Self::Enum(token_trees), Self::Rhai(se)) => {
+                let ts: TokenStream = se.parse().unwrap();
+                token_trees.extend(ts.into_iter());
+            }
+        }
+    }
+}
+
+fn rewrite_script(script: TokenStream) -> SciptType {
     fn and_str(tokens: &[TokenTree]) -> Option<String> {
         assert!(tokens.len() == 3);
         match &tokens[0] {
@@ -279,7 +381,35 @@ fn rewrite_script(script: TokenStream) -> String {
 
     // Look for `&"..."&`.
     let tokens = Vec::from_iter(script);
-    let mut output = String::new();
+
+    if let Some((pos, _)) = tokens
+        .get(0..=1)
+        .map(|t| {
+            t.iter().enumerate().find(|(_, tt)| {
+                if let TokenTree::Ident(i) = tt {
+                    i == "enum"
+                } else {
+                    false
+                }
+            })
+        })
+        .flatten()
+    {
+        // This is expected to be only one TokenTree::Group after the "enum" ident.
+        let variants = tokens.into_iter().skip(pos + 1).collect::<Vec<_>>();
+
+        if variants.len() == 1 {
+            if let TokenTree::Group(group) = variants.into_iter().next().unwrap() {
+                let enum_variants = group.stream().into_iter().filter(
+                |tt| !matches!(tt, TokenTree::Punct(p) if p.as_char() == ',' || p.as_char() == ';'),
+            ).collect::<Vec<_>>();
+                return SciptType::Enum(enum_variants);
+            }
+        }
+        panic!("Bad enum syntax");
+    }
+
+    let mut output: SciptType = SciptType::Rhai(String::new());
     let mut i = 0;
     while i < tokens.len() {
         if let TokenTree::Group(group) = &tokens[i] {
@@ -296,7 +426,7 @@ fn rewrite_script(script: TokenStream) -> String {
                 Delimiter::None => {}
             }
             output.push(' ');
-            output.push_str(&rewrite_script(group.stream()));
+            output.push_self(&rewrite_script(group.stream()));
             match group.delimiter() {
                 Delimiter::Parenthesis => {
                     output.push(')');
@@ -345,26 +475,8 @@ fn rewrite_script(script: TokenStream) -> String {
             }
         }
         i += 1;
-        //let template = match enter_repetition(&tokens[i..i + 3]) {
-        //    Some(template) => template,
-        //    None => {
-        //        i += 1;
-        //        continue;
-        //    }
-        //};
-        //*found_repetition = true;
-        //let mut repeated = Vec::new();
-        //for value in range {
-        //    repeated.extend(substitute_value(var, &value, template.clone()));
-        //}
-        //let repeated_len = repeated.len();
-        //tokens.splice(i..i + 3, repeated);
-        //i += repeated_len;
     }
-
-    //let script = TokenStream::from_iter(tokens);
-
-    output
+    dbg!(output)
 }
 
 fn repeat(var: &Ident, list: &[String], body: &TokenStream) -> TokenStream {
@@ -398,16 +510,6 @@ fn substitute_value(var: &Ident, value: &str, body: TokenStream) -> TokenStream 
                 }),
             );
 
-            //let mut iter = new_tokens.into_iter();
-            //let mut t = match iter.next() {
-            //    Some(t) => t,
-            //    None => panic!("Empty token"),
-            //};
-            //assert!(iter.next().is_none(), "Multiple tokens");
-
-            //t.set_span(original_span);
-            //tokens[i] = t;
-            //i += 1;
             continue;
         }
 
@@ -540,7 +642,7 @@ fn expand_repetitions(
 
 #[cfg(test)]
 mod test {
-    use crate::{rewrite_script, seq_impl};
+    use crate::{SciptType, rewrite_script, seq_impl};
     use quote::quote;
 
     #[test]
@@ -552,7 +654,7 @@ mod test {
         };
 
         let result = rewrite_script(inp);
-        assert_eq!(result, "let a = ( `${x}` ) ; ");
+        assert_eq!(result, SciptType::Rhai("let a = ( `${x}` ) ; ".to_string()));
     }
 
     #[test]
@@ -623,6 +725,25 @@ mod test {
             result.to_string(),
             "println (\"{}\" , 0) ; println (\"{}\" , - 1) ; println (\"{}\" , - 2) ;"
         );
+    }
+    #[test]
+    fn test_enum_variant_array_neg() {
+        let inp = quote! {
+            N in enum[A, B, C] {
+                let _ = E::N;
+            }
+        };
+
+        let result = seq_impl(syn::parse2(inp).unwrap());
+
+        if let Ok(result) = result {
+            println!("{}", result.to_string());
+        }
+
+        /* assert_eq!(
+            result.to_string(),
+            "println (\"{}\" , 0) ; println (\"{}\" , - 1) ; println (\"{}\" , - 2) ;"
+        ); */
     }
 
     #[test]

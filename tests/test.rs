@@ -319,7 +319,23 @@ fn teststestrs95cefe4d1ed944bf82a85f78911f4cc5() {
     }
     seq! {
         N in 10..3+6 {
-            N*2,
+            let _ = N;
+        }
+    }
+}
+
+#[test]
+#[allow(unused)]
+fn teststestrsc79fa85373d34e82ab205a4b15f68764() {
+    enum E {
+        A,
+        B,
+        C,
+    }
+
+    seq! {
+        N in enum[A, B, C] {
+            let _ = E::N;
         }
     }
 }
